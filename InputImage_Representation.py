@@ -1,16 +1,67 @@
 import numpy as np
 #from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages 
+from matplotlib.backends.backend_pdf import PdfPages
 from skimage import io
 import random
 from random import shuffle
-import copy 
+import copy
 import time
+
+from DesignPhysics import Design
+from PIL import Image, ImageDraw
+import cv2
+
+##############################################################
+# Erik's Code
+##############################################################
+# Load an image from the file system in the correct format
+def load_image(file_name):
+    img = np.float32(cv2.imread(file_name))
+    # Remove two channels
+    img = np.delete(img, [1, 2], axis=2)
+    img = img / 255
+    return img.squeeze()
+
+# Given a genotype, return an image as a 2D array of numbers [0, 1]
+def getImageForGenotype(genotype):
+    img = Image.new('F', (225, 225), 1.0)
+    draw = ImageDraw.Draw(img)
+    for curve in genotype:
+        X, Y = CubicBezierPoints(10, curve)
+        for i in range(len(X) - 1):
+            draw.line((50 + X[i], 200 - Y[i], 50 + X[i + 1], 200 - Y[i + 1]), fill=0.0, width=1)
+    img = np.asarray(img)
+    return img
+
+# Given a design and a genotype, give a score of how far from the current
+# trajectory the genotyp is
+def get_score(design, genotype):
+    img = getImageForGenotype(genotype)
+    score = design.get_score(img)
+
+    # Adjust score to be proportional to evolution
+    score = max(0, (0.3 - score) * 100)
+
+    # Save images for inspection that are below or above a certain threshold for debugging
+    # if score > 20:
+    #     save_img = img * 255
+    #     save_img = save_img.astype(np.uint8)
+    #     cv2.imwrite('test.png', save_img)
+    # if score < 1:
+    #     save_img = img * 255
+    #     save_img = save_img.astype(np.uint8)
+    #     cv2.imwrite('test1.png', save_img)
+
+    return score
+##############################################################
+# End Erik's Code
+##############################################################
+
 ############################################################## FUNCTIONS
 def distanceList_Euclidian(points,newPoint):
     """
-    points = [[X,Y],[X,Y],...]. newPoint = [X,Y]. 
+    points = [[X,Y],[X,Y],...]. newPoint = [X,Y].
     returns = [dist1,dist2,...]
     """
     distList = []
@@ -36,16 +87,16 @@ def KMeansClusters(points,kClusters,MaxRounds,LowArg1,HighArg1,LowArg2,HighArg2)
         Counter = 0 #Initialize counter for this round. It will pass through the while if clusters unchanged
         for k in DictioKeys: #Empty the cluster points
             DictioCluster[k][1] = []
-        for point in points: #assign each point to a cluster 
+        for point in points: #assign each point to a cluster
             distList = [] #Initialize the distances for this point
             for k in DictioKeys: #For each cluster
                 summation = (point[0]-DictioCluster[k][0][0])**2 + (point[1]-DictioCluster[k][0][1])**2
-                distList.append(summation**(0.5))  
+                distList.append(summation**(0.5))
             ClosestClusteri = distList.index(min(distList)) #index of the closest cluster (the center) to point
-            DictioCluster[ClosestClusteri][1].append(point) #assign point to the closest cluster    
-        for k in DictioKeys:#For each cluster, update center 
-            PointsCluster =  DictioCluster[k][1] 
-            if len(PointsCluster) != 0: 
+            DictioCluster[ClosestClusteri][1].append(point) #assign point to the closest cluster
+        for k in DictioKeys:#For each cluster, update center
+            PointsCluster =  DictioCluster[k][1]
+            if len(PointsCluster) != 0:
                 clusterX = 0
                 clusterY = 0
                 for point in PointsCluster:
@@ -58,7 +109,7 @@ def KMeansClusters(points,kClusters,MaxRounds,LowArg1,HighArg1,LowArg2,HighArg2)
                     Counter += 1
                 if clusterY != DictioCluster[k][0][1]:
                     DictioCluster[k][0][1] = clusterY #Update Y coordinate of the cluster center
-                    Counter += 1     
+                    Counter += 1
             else: #no point was assigned to cluster, so re-initialize it randomly
                 RandomCenter = [random.uniform(LowArg1, HighArg1),random.uniform(LowArg2, HighArg2)]
                 DictioCluster[k][0] = RandomCenter
@@ -67,17 +118,17 @@ def KMeansClusters(points,kClusters,MaxRounds,LowArg1,HighArg1,LowArg2,HighArg2)
     #LAST UPDATE OF THE CLUSTER POINTS ACCORDING TO THE FINAL CENTERS:
     for k in DictioKeys: #Empty the cluster points
         DictioCluster[k][1] = []
-    for point in points: #assign each point to a cluster 
+    for point in points: #assign each point to a cluster
         distList = [] #Initialize the distances for this point
         for k in DictioKeys: #For each cluster
             summation = (point[0]-DictioCluster[k][0][0])**2 + (point[1]-DictioCluster[k][0][1])**2
             distList.append(summation**(0.5))
         ClosestClusteri = distList.index(min(distList)) #index of the closest cluster (the center) to point
-        DictioCluster[ClosestClusteri][1].append(point) #assign point to the closest cluster    
-    return DictioCluster # Return dictionary with the cluster number as key and values the center coordinates and the points assigned to it. 
+        DictioCluster[ClosestClusteri][1].append(point) #assign point to the closest cluster
+    return DictioCluster # Return dictionary with the cluster number as key and values the center coordinates and the points assigned to it.
 def DeltaDensity(points):
     """
-    points = [[X,Y],[X,Y],...]. 
+    points = [[X,Y],[X,Y],...].
     return [Xrange,Yrange,XDistribution,YDistribution]
     """
     Xlist =[]
@@ -104,7 +155,7 @@ def DeltaDensity(points):
         Delta = np.abs(Ydensity[i+1] - Ydensity[i-1])/2.0 #Centered Finite Difference
         Max = max([Ydensity[i+1],Ydensity[i-1]])
         if Max != 0:
-            YDeltaDensity[i] = Delta/float(Max) # Delta in proportion of max in the finite difference 
+            YDeltaDensity[i] = Delta/float(Max) # Delta in proportion of max in the finite difference
     # Distribution E [0,1]; [Density * (DeltaDensity+0.1)]/Total
     XDistribution = np.multiply(np.array(Xdensity),np.add(np.array(XDeltaDensity),[0.1]))
     Total = np.sum(XDistribution)
@@ -116,8 +167,8 @@ def DeltaDensity(points):
     return [Xrange,Yrange,XDistribution,YDistribution]
 def CornersDetector(points,Tol_ProportionalDeltaDensity):
     """
-    points = [[X,Y],[X,Y],...]. When the proportional change in point density in both X and Y is 
-    >= Tol_ProportionalDeltaDensity, a potential corner is selected. 
+    points = [[X,Y],[X,Y],...]. When the proportional change in point density in both X and Y is
+    >= Tol_ProportionalDeltaDensity, a potential corner is selected.
     return [[CornerX0,CornerY0,Fitness0],[CornerX1,CornerY1,,Fitness0],...]; Fitness=mean(DeltaD_X,DeltaD_Y)
     """
     Corners = []
@@ -127,7 +178,7 @@ def CornersDetector(points,Tol_ProportionalDeltaDensity):
         Xlist.append(P[0])
         Ylist.append(P[1])
     Xrange = range(min(Xlist),max(Xlist)+1)
-    Yrange = range(min(Ylist),max(Ylist)+1)        
+    Yrange = range(min(Ylist),max(Ylist)+1)
     Xdensity = [0] * len(Xrange)
     for x in Xlist:
         Xdensity[x - min(Xlist)] += 1
@@ -140,7 +191,7 @@ def CornersDetector(points,Tol_ProportionalDeltaDensity):
             XDeriv = np.abs(Xdensity[i] - Xdensity[i-1]) #Backward Finite Difference
         Ref = Xdensity[i]
         if Ref != 0:
-            XDeriv = XDeriv/float(Ref) # Delta in proportion 
+            XDeriv = XDeriv/float(Ref) # Delta in proportion
         if XDeriv >= Tol_ProportionalDeltaDensity: # X[i] is Interesting in X, then explore in Y
             # How many Y's in X[i]? = Xdensity[i]
             Ydensity_inXi = [0] * len(Yrange)
@@ -152,7 +203,7 @@ def CornersDetector(points,Tol_ProportionalDeltaDensity):
             for j in range(len(Yrange)):
                 if j == 0: # First point
                     YDeriv = Ydensity_inXi[j] #Backward Finite Difference; assume density (j-1) = 0
-                    #Max = Ydensity_inXi[j+1]     
+                    #Max = Ydensity_inXi[j+1]
                 elif j == range(len(Yrange))[-1]: # Last point
                     YDeriv = Ydensity_inXi[j] #Forward Finite Difference; assume density (j+1) = 0
                     #Max = Ydensity_inXi[j-1]
@@ -161,11 +212,11 @@ def CornersDetector(points,Tol_ProportionalDeltaDensity):
                     #Max = max([Ydensity_inXi[j+1],Ydensity_inXi[j-1]])
                 Ref = Ydensity_inXi[j]
                 if Ref != 0:
-                    YDeriv = YDeriv/float(Ref) # Delta in proportion            
+                    YDeriv = YDeriv/float(Ref) # Delta in proportion
                 if YDeriv >= Tol_ProportionalDeltaDensity: # X[i] is Interesting in X, and Y[j] in Y
                     # We found a potential corner!!! :D
                     Corners.append([Xrange[i],Yrange[j],np.mean([XDeriv,YDeriv])]) # Corner: Point X[i],Y[j]
-    return Corners         
+    return Corners
 def CubicBezierPoints(n,Points):
     """
     The curve is defined from the 4 points, where e.g. Points=[ [X0,Y0],[X1,Y1],[X2,Y2],[X3,Y3],cluster ].
@@ -185,7 +236,7 @@ def CubicBezierPoints(n,Points):
     return [Xlist,Ylist]
 def RouletteWheelSelection(FitnessList):
     """
-    [FitnessList] provides the individuals represented by their fitness. 
+    [FitnessList] provides the individuals represented by their fitness.
     returns the index of the individual selected
     """
     #FitnessVals = FitnessList
@@ -211,8 +262,8 @@ def InitializeIndividual(Ncurves,Dictionary_Clusters):
     -> Calculate distance from other corners to 1st one: farther away within cluster -> Fitter
     -> Select the other end P3 (Roulette based on corner distance fitness)
     -> Interpolate linearly to determine the internal control points P1, P2
-    Dictionary_Clusters: keys are cluster indexes, related to 
-    [Center[X,Y], [points[X,Y] assigned to cluster],corners[[CornerX0,CornerY0,Fitness0],[CornerX1,CornerY1,,Fitness0],...] ], 
+    Dictionary_Clusters: keys are cluster indexes, related to
+    [Center[X,Y], [points[X,Y] assigned to cluster],corners[[CornerX0,CornerY0,Fitness0],[CornerX1,CornerY1,,Fitness0],...] ],
     returns a genotype: [ [[X0,Y0],[X1,Y1],[X2,Y2],[X3,Y3],cluster], [[X0,Y0],[X1,Y1],[X2,Y2],[X3,Y3],cluster],...Ncurves]
     """
     ClusterSizes = []
@@ -226,8 +277,8 @@ def InitializeIndividual(Ncurves,Dictionary_Clusters):
     iCluster = 0
     for c in range(Ncurves): # for every cubic Bezier curve
         # Select cluster:
-        if iCluster >= nKlusters: 
-            iCluster = RouletteWheelSelection(ClusterSizes) # More points -> More likely  
+        if iCluster >= nKlusters:
+            iCluster = RouletteWheelSelection(ClusterSizes) # More points -> More likely
         CornersFitness = []
         for c in Dictionary_Clusters[iCluster][2]:
             CornersFitness.append(c[2])
@@ -246,8 +297,8 @@ def InitializeIndividual(Ncurves,Dictionary_Clusters):
         P3_i = RouletteWheelSelection(Distances_toP0) # Farther from P0 -> More likely
         while P3_i in UsedPoints_i[iCluster] and Try < 2: # Try not to repeat a used point
             P3_i = RouletteWheelSelection(Distances_toP0)
-            Try += 1        
-        UsedPoints_i[iCluster].append(P3_i) # count P0_i as used in cluster iCluster        
+            Try += 1
+        UsedPoints_i[iCluster].append(P3_i) # count P0_i as used in cluster iCluster
         P3 = [ Dictionary_Clusters[iCluster][2][P3_i][0],Dictionary_Clusters[iCluster][2][P3_i][1] ]
         #Define intermediate control points:
         X1 = P0[0] + (P3[0]-P0[0])*0.3
@@ -261,7 +312,7 @@ def Fitness_RMSE_approxPerpendicular_cornerFit(NBezierPoints,searchWidh,Individu
     """
     -> From the genotype, get the phenotype (NBezierPoints points per Bezier curve)
     -> For every contour Potential corner:
-       -> Identify if there are Bezier points within a given XY square of widh searchWidh 
+       -> Identify if there are Bezier points within a given XY square of widh searchWidh
        -> If so, calculate and store smallest euclidean distance found
        -> If not, set 2*square diagonal as the Error
     -> Calculate and return the Root-Mean-Squared-Approx Euclidean Error: RMSE1
@@ -297,25 +348,25 @@ def Fitness_RMSE_approxPerpendicular_cornerFit(NBezierPoints,searchWidh,Individu
         Xrange = [CX-searchWidh/2.,CX+searchWidh/2.] # Width range of the Vertical space of the search cross
         Yrange = [CY-searchWidh/2.,CY+searchWidh/2.] # Height range of the Horizontal space of the search cross
         # Find shortest distance to all Bezier points in the Xrange of search:
-        for i in range(len(BezierXs)): # Check every Bezier point        
-            if (BezierXs[i] >= Xrange[0] and BezierXs[i] <= Xrange[1]) and (BezierYs[i] >= Yrange[0] and BezierYs[i] <= Yrange[1]): 
+        for i in range(len(BezierXs)): # Check every Bezier point
+            if (BezierXs[i] >= Xrange[0] and BezierXs[i] <= Xrange[1]) and (BezierYs[i] >= Yrange[0] and BezierYs[i] <= Yrange[1]):
                 # i Bezier point is within search range
                 Euclidean = ( (BezierXs[i]-CX)**2 + (BezierYs[i]-CY)**2 )**(0.5)
                 if Euclidean < Distance:
-                    Distance = Euclidean # Update Error approximation  
-        Distances.append(Distance)                    
+                    Distance = Euclidean # Update Error approximation
+        Distances.append(Distance)
         if Distance == 2* searchWidh * np.sqrt(2):
             countD1 += 1
     RMSE1 = 0
     for Error in Distances:
         RMSE1 += Error**2
-    RMSE1 = np.sqrt(RMSE1/float(len(Distances)))  
-    #################################################### Calculate error from the Bezier points  
+    RMSE1 = np.sqrt(RMSE1/float(len(Distances)))
+    #################################################### Calculate error from the Bezier points
     TargetXs = []
-    TargetYs = []    
+    TargetYs = []
     for Target in TargetPoints: # each iter: [X,Y]
         TX = Target[0] # X of the point we want to fit
-        TY = Target[1] # Y of the point we want to fit    
+        TY = Target[1] # Y of the point we want to fit
         TargetXs.append(TX)
         TargetYs.append(TY)
     Distances = []
@@ -335,7 +386,7 @@ def Fitness_RMSE_approxPerpendicular_cornerFit(NBezierPoints,searchWidh,Individu
                 if TYs[index] in Yrange: # a relevant-in-XY target point found!
                     Euclidean = ( (TXs[index]-Bx)**2 + (TYs[index]-By)**2 )**(0.5)
                     if Euclidean < Distance:
-                        Distance = Euclidean # Update Error approximation 
+                        Distance = Euclidean # Update Error approximation
                 TXs[index] = "used" #This Target point won't be used again for this Bezier point
                 TYs[index] = "used"
         """
@@ -346,7 +397,7 @@ def Fitness_RMSE_approxPerpendicular_cornerFit(NBezierPoints,searchWidh,Individu
                 TXs[index] = "used" #This Target point won't be used again for this Bezier point
                 TYs[index] = "used"
                 if Euclidean < Distance:
-                    Distance = Euclidean # Update Error approximation 
+                    Distance = Euclidean # Update Error approximation
         # look in the Y range of the cross
         for Y in Yrange:
             while Y in TYs: # a relevant target point found!
@@ -355,15 +406,15 @@ def Fitness_RMSE_approxPerpendicular_cornerFit(NBezierPoints,searchWidh,Individu
                 TXs[index] = "used" #This Target point won't be used again for this Bezier point
                 TYs[index] = "used"
                 if Euclidean < Distance:
-                    Distance = Euclidean # Update Error approximation 
-        """        
-        Distances.append(Distance) 
+                    Distance = Euclidean # Update Error approximation
+        """
+        Distances.append(Distance)
         if Distance == 2* searchWidh * np.sqrt(2):
             countD2 += 1
     RMSE2 = 0
     for Error in Distances:
         RMSE2 += Error**2
-    RMSE2 = np.sqrt(RMSE2/float(len(Distances)))                     
+    RMSE2 = np.sqrt(RMSE2/float(len(Distances)))
     return [RMSE1,RMSE2,countD1,countD2]
 def Fitness_RMSE_approxPerpendicular(NBezierPoints,searchWidh,IndividualGenotype,TargetPoints):
     """
@@ -405,19 +456,19 @@ def Fitness_RMSE_approxPerpendicular(NBezierPoints,searchWidh,IndividualGenotype
         Yrange = [TY-searchWidh/2.,TY+searchWidh/2.] # Height range of the Horizontal space of the search cross
         # Find shortest distance to all Bezier points in the Xrange of search:
         for i in range(len(BezierXs)): # Check every Bezier point
-            if (BezierXs[i] >= Xrange[0] and BezierXs[i] <= Xrange[1]) and (BezierYs[i] >= Yrange[0] and BezierYs[i] <= Yrange[1]): 
+            if (BezierXs[i] >= Xrange[0] and BezierXs[i] <= Xrange[1]) and (BezierYs[i] >= Yrange[0] and BezierYs[i] <= Yrange[1]):
                 # i Bezier point is within search range
                 Euclidean = ( (BezierXs[i]-TX)**2 + (BezierYs[i]-TY)**2 )**(0.5)
                 if Euclidean < Distance:
-                    Distance = Euclidean # Update Error approximation         
+                    Distance = Euclidean # Update Error approximation
         Distances.append(Distance)
         if Distance == 2* searchWidh * np.sqrt(2):
             countD1 += 1
     RMSE1 = 0
     for Error in Distances:
         RMSE1 += Error**2
-    RMSE1 = np.sqrt(RMSE1/float(len(Distances)))  
-    #################################################### Calculate error from the Bezier points  
+    RMSE1 = np.sqrt(RMSE1/float(len(Distances)))
+    #################################################### Calculate error from the Bezier points
     Distances = []
     countD2 = 0 #***
     for i in range(len(BezierXs)): # for every Bezier point
@@ -435,7 +486,7 @@ def Fitness_RMSE_approxPerpendicular(NBezierPoints,searchWidh,IndividualGenotype
                 if TYs[index] in Yrange: # a relevant-in-XY target point found!
                     Euclidean = ( (TXs[index]-Bx)**2 + (TYs[index]-By)**2 )**(0.5)
                     if Euclidean < Distance:
-                        Distance = Euclidean # Update Error approximation 
+                        Distance = Euclidean # Update Error approximation
                 TXs[index] = "used" #This Target point won't be used again for this Bezier point
                 TYs[index] = "used"
         """
@@ -446,7 +497,7 @@ def Fitness_RMSE_approxPerpendicular(NBezierPoints,searchWidh,IndividualGenotype
                 TXs[index] = "used" #This Target point won't be used again for this Bezier point
                 TYs[index] = "used"
                 if Euclidean < Distance:
-                    Distance = Euclidean # Update Error approximation 
+                    Distance = Euclidean # Update Error approximation
         # look in the Y range of the cross
         for Y in Yrange:
             while Y in TYs: # a relevant target point found!
@@ -455,15 +506,15 @@ def Fitness_RMSE_approxPerpendicular(NBezierPoints,searchWidh,IndividualGenotype
                 TXs[index] = "used" #This Target point won't be used again for this Bezier point
                 TYs[index] = "used"
                 if Euclidean < Distance:
-                    Distance = Euclidean # Update Error approximation 
-        """        
-        Distances.append(Distance) 
+                    Distance = Euclidean # Update Error approximation
+        """
+        Distances.append(Distance)
         if Distance == 2* searchWidh * np.sqrt(2):
             countD2 += 1
     RMSE2 = 0
     for Error in Distances:
         RMSE2 += Error**2
-    RMSE2 = np.sqrt(RMSE2/float(len(Distances)))                     
+    RMSE2 = np.sqrt(RMSE2/float(len(Distances)))
     return [RMSE1,RMSE2,countD1,countD2]
 def InvertFitness(FitnessList):
     """
@@ -477,11 +528,11 @@ def InvertFitness(FitnessList):
         IFitnessList.append(1/float(F))
     return IFitnessList
 def SelectParents(FitnessList_maxGood,NParents):
-    """ 
+    """
     ROULETTE WHEEL SELECTION:
     The higher the fitness value the better
     return list of NtotalParents parents [indexes]
-    """ 
+    """
     iParents = []
     for p in range(NParents):
         i = RouletteWheelSelection(FitnessList_maxGood) # Returns the index of the individual selected
@@ -547,7 +598,7 @@ def CrossOver_offsprings(ParentsGenotypes,Dictionary_Clusters):
         iCluster = 0
         for c in range(Ncurves): # for every curve (gene) to be selected
             if iCluster >= NClusters:
-                iCluster = RouletteWheelSelection(ClusterSizes) # More curves -> More likely  
+                iCluster = RouletteWheelSelection(ClusterSizes) # More curves -> More likely
             Curve = random.choice(DictioClusterGenePool[iCluster])
             ChildGenotype.append(Curve)
             iCluster += 1
@@ -561,12 +612,12 @@ def MutatePopulation(Genotypes,Gauss_SD,mutate_probab):
     # +/- 3.5SD; 99.95% are within https://en.wikipedia.org/wiki/68%E2%80%9395%E2%80%9399.7_rule
     """
     Mutated = copy.deepcopy(Genotypes)
-    for i in range(len(Genotypes)): #for every individual       
+    for i in range(len(Genotypes)): #for every individual
         for j in range(len(Genotypes[i])): #for every curve
             for k in range(4): #for every point
                 for l in range(2):
                     R = random.random() #Random uniform value between [0.0,1.0]
-                    if R < mutate_probab: #Mutation probability was met! 
+                    if R < mutate_probab: #Mutation probability was met!
                         MutateAmount = random.gauss(0, Gauss_SD) #Sample from a gaussian distribution Mean = 0 and SD
                         Mutated[i][j][k][l] += MutateAmount
     return Mutated
@@ -575,17 +626,17 @@ def GeneticAlgorithm_SketchRepresentation(NPopulation,propElites,NGenerations,mu
     NPopulation:No. of individuals in population
     propElites: Proportion [0,1] of top individuals that are passed on directly to the next generation
     NGenerations: How many evolving generations
-    mutate_probab: how likely [0,1] is it for a mutation to happen at every piece of info in every gene after crossover; i.e., in the XY coordinates of the 
+    mutate_probab: how likely [0,1] is it for a mutation to happen at every piece of info in every gene after crossover; i.e., in the XY coordinates of the
                    4 control points that determine every cubic Bezier curve
-    mutate_Gauss_SD: A Gauss distribution with this Standard Deviation will determine the magnitudes of mutation            
+    mutate_Gauss_SD: A Gauss distribution with this Standard Deviation will determine the magnitudes of mutation
     Ncurves: how many cubic Bezier curves per individual
     NBezierPoints: how many points are created per Bezier curves in the Phenotype
     searchWidh: For measuring the error, this is the width of the search "cross" with the target point in the center
     Dictionary_Clusters: keys=cluster indexes, values=[Center[X,Y], [points[X,Y] assigned to cluster],corners[[CornerX0,CornerY0,Fitness0],[CornerX1,CornerY1,,Fitness0],...] ]
     -------------------------------------- This Genetic Algorithm MINIMIZES the fitness function, i.e., the RMSE deviations between target points and the Bezier curves
-    Returns [[best genotype],its fitness,its generation,[fittest history],[All genotypes history],[Mean Fitness History],[Mean FitnessTargetP History],[Mean FitnessBezierP History]]  
+    Returns [[best genotype],its fitness,its generation,[fittest history],[All genotypes history],[Mean Fitness History],[Mean FitnessTargetP History],[Mean FitnessBezierP History]]
     where [All genotypes history]=[[Genotype1],...]; Genotype1=[[curve1],[curve2],...,Fitness,Generation]
-    """   
+    """
     # Retrieve Target Points:
     TargetPoints = []
     for k in Dictio_Clusters.keys():
@@ -598,11 +649,12 @@ def GeneticAlgorithm_SketchRepresentation(NPopulation,propElites,NGenerations,mu
     for p in range(NPopulation):
         Popu.append(InitializeIndividual(Ncurves,Dictio_Clusters))
     print "Population Initialized"
-    #Initialize results lists:    
+    #Initialize results lists:
     FittestHistory = []
     MeanFitnessHistory = []
     MeanFitnessTargetPHistory = []
     MeanFitnessBezierPHistory = []
+    MeanFitnessNNHistory = []
     PopuHistory = []
     Fittest = [[],10000,10000] #Initialize result list
     for G in range(NGenerations):#For every generation
@@ -610,6 +662,7 @@ def GeneticAlgorithm_SketchRepresentation(NPopulation,propElites,NGenerations,mu
         print "Generation: "+str(G+1)
         #Evaluate Fitness:
         FitnessValues = []
+        FitnessNN = []
         FitnessTargetPoints = []
         FitnessBezierPoints = []
         Count1s = []
@@ -620,24 +673,34 @@ def GeneticAlgorithm_SketchRepresentation(NPopulation,propElites,NGenerations,mu
             Count2s.append(count2)
             FitnessTargetPoints.append(FitnessTargetP)
             FitnessBezierPoints.append(FitnessBezierP)
-            FitnessValues.append(FitnessTargetP + 1*FitnessBezierP) # Bezier fitness weights 1X
+
+            # Get score from neural network
+            nn_score = get_score(design, genotype)
+            FitnessNN.append(nn_score)
+            # Print for debugging purposes
+            print('NN score', nn_score, 'RMSE score', FitnessTargetP + 1*FitnessBezierP)
+
+            FitnessValues.append(FitnessTargetP + 1*FitnessBezierP + nn_score) # Bezier fitness weights 1X
             Individual = copy.deepcopy(genotype)
             Individual += [FitnessValues[-1],G+1] #Add Fitness and Generation at the end of Individual
             PopuHistory.append(Individual)
         MeanFitnessHistory.append(np.mean(FitnessValues))
         MeanFitnessTargetPHistory.append(np.mean(FitnessTargetP))
         MeanFitnessBezierPHistory.append(np.mean(FitnessBezierP))
-        FittestValue = min(FitnessValues)# fittest value of this generation 
+        MeanFitnessNNHistory.append(np.mean(FitnessNN))
+
+        FittestValue = min(FitnessValues)# fittest value of this generation
         FittestHistory.append(FittestValue)#Add the fittest of this generation to the fitness history
         #Update best results
         if FittestValue < Fittest[1]: #If the fittest of this generation is better than historic best:
             Fittest[0] = Popu[FitnessValues.index(FittestValue)] #Result: Look for the index of the fittest of this generation and insert its genotype
             Fittest[1] = FittestValue # Result: Insert the fitness of the leading chromosome
-            Fittest[2] = (G+1) #Result: Insert the current generation number, +1 because it starts in 0       
+            Fittest[2] = (G+1) #Result: Insert the current generation number, +1 because it starts in 0
         print "-->Fittest now: "+str(FittestValue) + "; historical: "+str(Fittest[1])
-        print "-->Mean Fitness: "+str(MeanFitnessHistory[-1]) 
+        print "-->Mean Fitness: "+str(MeanFitnessHistory[-1])
         print "-->Mean Fitness(TargetP): "+str(FitnessTargetPoints[-1])+"; Mean out: "+str(np.mean(Count1s))
         print "-->Mean Fitness(BezierP): "+str(FitnessBezierPoints[-1])+"; Mean out: "+str(np.mean(Count2s))
+        print "-->Mean Fitness(NN): "+str(MeanFitnessNNHistory[-1])
         #Select Parents:
         FitnessList_maxGood = InvertFitness(FitnessValues)
         Parents_indexes = SelectParents(FitnessList_maxGood,NParents)
@@ -645,17 +708,17 @@ def GeneticAlgorithm_SketchRepresentation(NPopulation,propElites,NGenerations,mu
         for i in Parents_indexes:
             Parents.append(Popu[i])
         #Crossover, Offsprings:
-        Offsprings = CrossOver_offsprings(Parents,Dictio_Clusters) # Dictio_Clusters       
+        Offsprings = CrossOver_offsprings(Parents,Dictio_Clusters) # Dictio_Clusters
         #Mutate Offsprings:
-        MutatedOffsprings = MutatePopulation(Offsprings,mutate_Gauss_SD,mutate_probab)  
+        MutatedOffsprings = MutatePopulation(Offsprings,mutate_Gauss_SD,mutate_probab)
         Offsprings = [] # Empty this list
-        #Select Elites:        
+        #Select Elites:
         if NElites == 1: #If only one elite, don't mutate it
             Eindex = SelectElites(FitnessList_maxGood,1)[0]
             Elite = [Popu[Eindex]]
             Popu = Elite+MutatedOffsprings
         elif NElites > 1:#If several elites, clone the best and don't mutate her; mutate the other elites including the clone
-            Nselect = NElites/2 
+            Nselect = NElites/2
             Best_indexes = SelectElites(FitnessList_maxGood,NElites-Nselect) # Find the best elite
             Bests = []
             for i in Best_indexes:
@@ -669,17 +732,17 @@ def GeneticAlgorithm_SketchRepresentation(NPopulation,propElites,NGenerations,mu
             Popu = Bests + MutatedElites + MutatedOffsprings
         else:
             Popu = MutatedOffsprings
-        shuffle(Popu) #Reshuffle the list of chromosomes randomly       
+        shuffle(Popu) #Reshuffle the list of chromosomes randomly
     Fittest.append(FittestHistory) #Result: Insert the fitness history
-    Fittest.append(PopuHistory) #Result: Insert the chromosome History    
-    Fittest.append(MeanFitnessHistory) 
-    Fittest.append(MeanFitnessTargetPHistory) 
-    Fittest.append(MeanFitnessBezierPHistory)    
+    Fittest.append(PopuHistory) #Result: Insert the chromosome History
+    Fittest.append(MeanFitnessHistory)
+    Fittest.append(MeanFitnessTargetPHistory)
+    Fittest.append(MeanFitnessBezierPHistory)
     return Fittest
 ###############################################################################
 ###############################################################################
 ############################################################################### BODY OF CODE:
-############################################################################### 
+###############################################################################
 ####################################################################### INPUTS:
 ##### Inputs for graphs:
 name = "Seed4_300dpi" # Name of the file with the input sketch
@@ -699,8 +762,21 @@ NPopulation = 50 #50 #No. of individuals in population
 propElites = 0.5 #0.5 #Proportion [0,1] of top individuals that are passed on directly to the next generation
 NGenerations = 20 #20 #How many evolving generations
 mutate_probab = 0.25 #0.25 #how likely [0,1] it is for a mutation to happen at every XY coordinates of the 4 control points that determine every cubic Bezier curve
-mutate_Gauss_SD = 2 #2 #A Gauss distribution with this Standard Deviation will determine the magnitudes of mutation   
+mutate_Gauss_SD = 2 #2 #A Gauss distribution with this Standard Deviation will determine the magnitudes of mutation
 ###############################################################################
+
+# Init design to load neural network
+design = Design()
+
+# s0 is an empty image by default
+# s0 = load_image('rect.png')
+# design.set_design(s0)
+
+# set s1
+s1 = load_image(name + '.png')
+design.set_design(s1)
+
+
 start_time = time.clock() # Start time
 filename = name+".png"
 SketchIn = io.imread(filename)
@@ -714,7 +790,7 @@ for i in range(nRows): #iter through rows
     for j in range(nColumns): #iter through columns in row i
         Pixel = SketchIn[i][j]
         if Pixel[0] < GrayTol or Pixel[1] < GrayTol or Pixel[2] < GrayTol: # Relevant point detected!
-            X = j 
+            X = j
             Y = nRows - i
             Points.append([X,Y])
 # Assing the Relevant Points to nearest K clusters
@@ -725,11 +801,11 @@ for k in Dictio_Clusters.keys(): # For every Cluster
     Corners = CornersDetector(Dictio_Clusters[k][1],Tol_ProportionalDeltaDensity)
     nCorners += len(Corners)
     Dictio_Clusters[k].append(Corners) # Add Corners: [[CornerX0,CornerY0,Fitness0],[CornerX1,CornerY1,,Fitness0],...]
-print "Potential Corners: "+str(nCorners) 
- 
+print "Potential Corners: "+str(nCorners)
+
 # Genetic Algorithm for finding a Sketch Representation with cubic Beziers by minimizing the Euclidean RMSE (approx):
 GAResults=GeneticAlgorithm_SketchRepresentation(NPopulation,propElites,NGenerations,mutate_probab,mutate_Gauss_SD,Ncurves,NBezierPoints,searchWidh,Dictio_Clusters)
-#Returns [[best genotype],its fitness,its generation,[fittest history],[genotypes history with Fitness,G],[Mean Fitness History],[Mean FitnessTargetP History],[Mean FitnessBezierP History]] 
+#Returns [[best genotype],its fitness,its generation,[fittest history],[genotypes history with Fitness,G],[Mean Fitness History],[Mean FitnessTargetP History],[Mean FitnessBezierP History]]
 BestGenotype = GAResults[0]
 Bestfitness = GAResults[1]
 GenerationOfFittest = GAResults[2]
@@ -767,7 +843,7 @@ if TextOut == "Y":
 ###############################################################################
 ###############################################################################
 ############################################################### GRAPHS
-#In matplotlib pass color = [(0.3,0.3,0.5)]; where (r, g, b, a) 
+#In matplotlib pass color = [(0.3,0.3,0.5)]; where (r, g, b, a)
 plt.close("all")
 Size = 1.5 # Marker size
 
@@ -782,7 +858,7 @@ if "RelevantPoints" in Figs:
         plt.plot([P[0]], [P[1]],marker='o', markersize=Size,markeredgewidth=0,color = (R,G,B))
     plt.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
     #figManager = plt.get_current_fig_manager()
-    #figManager.window.showMaximized()  
+    #figManager.window.showMaximized()
     if ImageOut == "Y":
         pp = PdfPages(name+'_RelevantPoints.pdf')
         plt.savefig(pp, format='pdf')
@@ -830,7 +906,7 @@ if "(not available)Clusters_Dist" in Figs:
         for i in range(len(Dictio_Clusters[k][3])):
             plt.plot([Dictio_Clusters[k][0][0]+70*Dictio_Clusters[k][5][i],Dictio_Clusters[k][0][0]],[Dictio_Clusters[k][3][i],Dictio_Clusters[k][3][i]],color="k",linewidth=0.5)
         #Distribution: Vertical line
-        plt.plot([Dictio_Clusters[k][0][0],Dictio_Clusters[k][0][0]],[Dictio_Clusters[k][3][0],Dictio_Clusters[k][3][-1]],"-k",linewidth=0.5)   
+        plt.plot([Dictio_Clusters[k][0][0],Dictio_Clusters[k][0][0]],[Dictio_Clusters[k][3][0],Dictio_Clusters[k][3][-1]],"-k",linewidth=0.5)
     plt.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
     if ImageOut == "Y":
         pp = PdfPages(name+'_PointClusters_Distri.pdf')
@@ -848,7 +924,7 @@ if "Clusters_Corners" in Figs:
         G = random.uniform(0, 1)
         B = random.uniform(0, 1)
         #plt.plot(Dictio_Clusters[k][0][0],Dictio_Clusters[k][0][1],marker='x',markersize=10,color=(R,G,B)) # Plot cluster centers
-        # Plot points in cluster:        
+        # Plot points in cluster:
         for P in Dictio_Clusters[k][1]: # For every point in this cluster
             plt.plot([P[0]], [P[1]],marker='o', markersize=Size,markeredgewidth=0,color = (R,G,B))
         # Plot corners in cluster:
@@ -856,7 +932,7 @@ if "Clusters_Corners" in Figs:
         for c in Corners:
             size = 5*(c[2]/Tol_ProportionalDeltaDensity) # larger corner fitness -> larger marker
             plt.plot([c[0]],[c[1]],marker='x',markersize=size,color=(R,G,B))
-        '''        
+        '''
         #Distribution: horizontal Distribution Bars
         for i in range(len(Dictio_Clusters[k][2])):
             plt.plot([Dictio_Clusters[k][2][i],Dictio_Clusters[k][2][i]],[Dictio_Clusters[k][0][1]+70*Dictio_Clusters[k][4][i],Dictio_Clusters[k][0][1]],color="k",linewidth=0.5)
@@ -866,21 +942,21 @@ if "Clusters_Corners" in Figs:
         for i in range(len(Dictio_Clusters[k][3])):
             plt.plot([Dictio_Clusters[k][0][0]+70*Dictio_Clusters[k][5][i],Dictio_Clusters[k][0][0]],[Dictio_Clusters[k][3][i],Dictio_Clusters[k][3][i]],color="k",linewidth=0.5)
         #Distribution: Vertical line
-        plt.plot([Dictio_Clusters[k][0][0],Dictio_Clusters[k][0][0]],[Dictio_Clusters[k][3][0],Dictio_Clusters[k][3][-1]],"-k",linewidth=0.5)   
+        plt.plot([Dictio_Clusters[k][0][0],Dictio_Clusters[k][0][0]],[Dictio_Clusters[k][3][0],Dictio_Clusters[k][3][-1]],"-k",linewidth=0.5)
         '''
     plt.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
     if ImageOut == "Y":
         pp = PdfPages(name+'_PointClusters_Corners.pdf')
         plt.savefig(pp, format='pdf')
         pp.close()
-        
+
 if "TestBezier" in Figs:
     # Bezier cubic curves:
     Point0 = [0,4]
     Point1 = [1.3,8]
     Point2 = [7.5,6.5]
     Point3 = [6,10]
-    BezierPoints = CubicBezierPoints(NBezierPoints,[Point0,Point1,Point2,Point3])  
+    BezierPoints = CubicBezierPoints(NBezierPoints,[Point0,Point1,Point2,Point3])
     fig5 = plt.figure()
     #plt.xlim(-nColumns*0.1,nColumns*1.1)
     #plt.ylim(-nRows*0.1,nRows*1.1)
@@ -922,7 +998,7 @@ if "InitializedIndividual" in Figs:
         plt.plot(XsBezier,YsBezier,linestyle='-',linewidth=1,color=(R,G,B))
         #Plot the control Points:
         for P in curve[:-1]:
-            plt.plot([P[0]], [P[1]],marker='x', markersize=marker,markeredgewidth=0.5,color=(R,G,B))        
+            plt.plot([P[0]], [P[1]],marker='x', markersize=marker,markeredgewidth=0.5,color=(R,G,B))
     plt.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
     if ImageOut == "Y":
         pp = PdfPages(name+'_InitializedIndividual.pdf')
@@ -935,7 +1011,7 @@ if "Fitness" in Figs:
     plt.ylim(0,max(MeanFitnessHistory)*1.1)
     plt.plot(range(1,len(FittestHistory)+1),MeanFitnessHistory,"-k",linewidth = 2,label="Mean Fitness")
     plt.plot(range(1,len(FittestHistory)+1),MeanFitnessTargetPHistory,"--c",linewidth = 2,label="Mean Fitness(Target Points)")
-    plt.plot(range(1,len(FittestHistory)+1),MeanFitnessBezierPHistory,"--b",linewidth = 2,label="Mean Fitness(Bezier Points)")    
+    plt.plot(range(1,len(FittestHistory)+1),MeanFitnessBezierPHistory,"--b",linewidth = 2,label="Mean Fitness(Bezier Points)")
     plt.plot(range(1,len(FittestHistory)+1),FittestHistory,"-r",linewidth = 2,label="Fittest")
     plt.plot(range(1,len(FittestHistory)+1),FittestHistory,marker='o',markersize = 3,markeredgewidth=0,linewidth=0,color = "k")
     marker = 10
@@ -954,7 +1030,7 @@ if "Fittest" in Figs:
     fig8.set_size_inches(5*(nColumns/float(nRows)),5,forward=True)
     # Expand the figure proportionally
     plt.xlim(-nColumns*0.1,nColumns*1.1)
-    plt.ylim(-nRows*0.1,nRows*1.1) 
+    plt.ylim(-nRows*0.1,nRows*1.1)
     #Plot Target Points:
     R,G,B = 240/255.,240/255.,240/255.
     for P in Points:
@@ -962,7 +1038,7 @@ if "Fittest" in Figs:
     #Plot Bezier curves:
     BezierColor = (100/255.,100/255.,100/255.,0.6) # {R,G,B,a}
     for curve in BestGenotype:
-        XsBezier, YsBezier= CubicBezierPoints(50,curve)     
+        XsBezier, YsBezier= CubicBezierPoints(50,curve)
         plt.plot(XsBezier,YsBezier,linestyle='-',linewidth=0.8,color=BezierColor)
     plt.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
     if ImageOut == "Y":
